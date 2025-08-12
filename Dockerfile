@@ -1,4 +1,4 @@
-# Start from the base image
+# Start from the base image you were using
 FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS base
 
 ENV HF_HOME=/runpod-volume
@@ -19,9 +19,6 @@ RUN pip install uv
 # install python dependencies
 COPY requirements.txt /requirements.txt
 RUN uv pip install -r /requirements.txt --system
-
-# install a recent version of transformers
-RUN pip install transformers>=4.42.0 --no-cache-dir
 
 # install torch
 RUN pip install torch==2.5.1+cu124 --index-url https://download.pytorch.org/whl/test/cu124 --no-cache-dir
