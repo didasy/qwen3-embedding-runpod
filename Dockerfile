@@ -1,9 +1,9 @@
-# Start from the base image you were using
+# Start from the base image
 FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS base
 
 ENV HF_HOME=/runpod-volume
 
-# install python and other packages
+# Install Python and other necessary packages
 RUN apt-get update && apt-get install -y \
     python3.11 \
     python3-pip \
@@ -13,15 +13,15 @@ RUN apt-get update && apt-get install -y \
     && ln -sf /usr/bin/python3.11 /usr/bin/python \
     && ln -sf /usr/bin/pip3 /usr/bin/pip
 
-# install uv
-RUN pip install uv
-
-# install python dependencies
-COPY requirements.txt /requirements.txt
-RUN uv pip install -r /requirements.txt --system
-
-# install torch
-RUN pip install torch==2.5.1+cu124 --index-url https://download.pytorch.org/whl/test/cu124 --no-cache-dir
+# Perform a clean installation of all dependencies with explicit versions
+RUN pip install --no-cache-dir \
+    runpod~=1.7.0 \
+    infinity-emb[all]==0.0.76 \
+    transformers>=4.42.0 \
+    sentence-transformers \
+    einops \
+    torch==2.5.1+cu124 --index-url https://download.pytorch.org/whl/test/cu124 \
+    && pip install git+https://github.com/pytorch-labs/float8_experimental.git --no-cache-dir
 
 # Add src files
 ADD src .
