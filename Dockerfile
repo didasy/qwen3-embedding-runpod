@@ -1,10 +1,36 @@
-# Start from the base image you were using
-FROM runpod/worker-infinity-embedding:1.1.4
+# Start from the base image
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS base
 
-# Set the working directory
-WORKDIR /
+ENV HF_HOME=/runpod-volume
 
-# Update the necessary libraries to their latest versions
-# This ensures support for newer models like Qwen3
-RUN python3 -m pip install --upgrade pip && \
-    pip install --upgrade transformers sentence-transformers torch
+# install python and other packages
+RUN apt-get update && apt-get install -y \
+    python3.11 \
+    python3-pip \
+    git \
+    wget \
+    libgl1 \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python \
+    && ln -sf /usr/bin/pip3 /usr/bin/pip
+
+# install uv
+RUN pip install uv
+
+# install python dependencies
+COPY requirements.txt /requirements.txt
+RUN uv pip install -r /requirements.txt --system
+
+# install a recent version of transformers
+RUN pip install transformers>=4.42.0 --no-cache-dir
+
+# install torch
+RUN pip install torch==2.5.1+cu124 --index-url https://download.pytorch.org/whl/test/cu124 --no-cache-dir
+
+# Add src files
+ADD src .
+
+# Add test input
+COPY test_input.json /test_input.json
+
+# start the handler
+CMD python -u /handler.py
