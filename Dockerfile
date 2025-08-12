@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y \
 
 # Perform a clean installation of all dependencies with explicit versions
 RUN pip install --no-cache-dir \
-    runpod~=1.7.0 \
+    "runpod>=1.7.0, <1.8.0" \
     infinity-emb[all]==0.0.76 \
     transformers>=4.42.0 \
     sentence-transformers \
