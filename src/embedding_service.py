@@ -1,58 +1,92 @@
-import os
-from dotenv import load_dotenv
-from functools import cached_property
+from config import EmbeddingServiceConfig
+from infinity_emb.engine import AsyncEngineArray, EngineArgs
+from utils import (
+    OpenAIModelInfo,
+    ModelInfo,
+    list_embeddings_to_response,
+    to_rerank_response,
+)
 
-DEFAULT_BATCH_SIZE = 32
-DEFAULT_BACKEND = "torch"
-
-if not os.environ.get("INFINITY_QUEUE_SIZE"):
-    # how many items can be in the queue
-    os.environ["INFINITY_QUEUE_SIZE"] = "48000"
+import asyncio
 
 
-class EmbeddingServiceConfig:
+class EmbeddingService:
     def __init__(self):
-        load_dotenv()
-
-    def _get_no_required_multi(self, name, default=None):
-        out = os.getenv(name, f"{default};" * len(self.model_names)).split(";")
-        out = [o for o in out if o]
-        if len(out) != len(self.model_names):
-            raise ValueError(
-                f"Env var: {name} must have the same number of elements as MODEL_NAMES"
+        self.config = EmbeddingServiceConfig()
+        engine_args = []
+        for model_name, batch_size, dtype in zip(
+            self.config.model_names, self.config.batch_sizes, self.config.dtypes
+        ):
+            engine_args.append(
+                EngineArgs(
+                    model_name_or_path=model_name,
+                    batch_size=batch_size,
+                    engine=self.config.backend,
+                    dtype=dtype,
+                    model_warmup=False,
+                    lengths_via_tokenize=True,
+                )
             )
-        return out
 
-    @cached_property
-    def backend(self):
-        return os.environ.get("BACKEND", DEFAULT_BACKEND)
+        self.engine_array = AsyncEngineArray.from_args(engine_args)
+        self.is_running = False
+        self.sepamore = asyncio.Semaphore(1)
 
-    @cached_property
-    def model_names(self) -> list[str]:
-        model_names = os.environ.get("MODEL_NAMES")
-        if not model_names:
-            raise ValueError(
-                "Missing required environment variable 'MODEL_NAMES'.\n"
-                "Please provide at least one HuggingFace model ID, or multiple IDs separated by a semicolon.\n"
-                "Examples:\n"
-                "  MODEL_NAMES=BAAI/bge-small-en-v1.5\n"
-                "  MODEL_NAMES=BAAI/bge-small-en-v1.5;intfloat/e5-large-v2\n"
+    async def start(self):
+        """starts the engine background loop"""
+        async with self.sepamore:
+            if not self.is_running:
+                await self.engine_array.astart()
+                self.is_running = True
+
+    async def stop(self):
+        """stops the engine background loop"""
+        async with self.sepamore:
+            if self.is_running:
+                await self.engine_array.astop()
+                self.is_running = False
+
+    async def route_openai_models(self) -> OpenAIModelInfo:
+        return OpenAIModelInfo(
+            data=[ModelInfo(id=model_id, stats={}) for model_id in self.list_models()]
+        ).model_dump()
+
+    def list_models(self) -> list[str]:
+        return list(self.engine_array.engines_dict.keys())
+
+    async def route_openai_get_embeddings(
+        self,
+        embedding_input: str | list[str],
+        model_name: str,
+        return_as_list: bool = False,
+    ):
+        """returns embeddings for the input text"""
+        if not self.is_running:
+            await self.start()
+        if not isinstance(embedding_input, list):
+            embedding_input = [embedding_input]
+
+        embeddings, usage = await self.engine_array[model_name].embed(embedding_input)
+        if return_as_list:
+            return [
+                list_embeddings_to_response(embeddings, model=model_name, usage=usage)
+            ]
+        else:
+            return list_embeddings_to_response(
+                embeddings, model=model_name, usage=usage
             )
-        model_names = model_names.split(";")
-        model_names = [model_name for model_name in model_names if model_name]
-        return model_names
 
-    @cached_property
-    def batch_sizes(self) -> list[int]:
-        batch_sizes = self._get_no_required_multi("BATCH_SIZES", DEFAULT_BATCH_SIZE)
-        batch_sizes = [int(batch_size) for batch_size in batch_sizes]
-        return batch_sizes
-
-    @cached_property
-    def dtypes(self) -> list[str]:
-        dtypes = self._get_no_required_multi("DTYPES", "auto")
-        return dtypes
-
-    @cached_property
-    def runpod_max_concurrency(self) -> int:
-        return int(os.environ.get("RUNPOD_MAX_CONCURRENCY", 300))
+    async def infinity_rerank(
+        self, query: str, docs: str, return_docs: str, model_name: str
+    ):
+        """Rerank the documents based on the query"""
+        if not self.is_running:
+            await self.start()
+        scores, usage = await self.engine_array[model_name].rerank(
+            query=query, docs=docs, raw_scores=False
+        )
+        if not return_docs:
+            docs = None
+        return to_rerank_response(
+            scores=scores, documents=docs, model=model_name, usage=usage
+        )
