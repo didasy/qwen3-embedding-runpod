@@ -14,14 +14,13 @@ RUN apt-get update && apt-get install -y \
     && ln -sf /usr/bin/pip3 /usr/bin/pip
 
 # Install all dependencies in a single, consolidated command
-RUN pip install --no-cache-dir \
-    infinity-emb[all]==0.0.76 \
+RUN pip install --no-cache-dir infinity-emb[all]==0.0.76 \
     transformers>=4.42.0 \
     sentence-transformers \
     einops \
     torch==2.5.1+cu124 --index-url https://download.pytorch.org/whl/test/cu124 \
-    && pip install git+https://github.com/runpod/runpod-python.git --no-cache-dir \
-    && pip install git+https://github.com/pytorch-labs/float8_experimental.git --no-cache-dir
+    && pip install --no-cache-dir git+https://github.com/runpod/runpod-python.git \
+    && pip install --no-cache-dir git+https://github.com/pytorch-labs/float8_experimental.git
 
 # Add src files
 ADD src .
@@ -30,4 +29,4 @@ ADD src .
 COPY test_input.json /test_input.json
 
 # start the handler
-CMD python -u /handler.py
+CMD ["python", "-u", "/handler.py"]
