@@ -1,6 +1,0 @@
-{
-  "input": {
-    "model": "BAAI/bge-small-en-v1.5",
-    "input": "Hello, world!"
-  }
-}

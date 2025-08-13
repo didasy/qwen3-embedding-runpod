@@ -1,32 +1,26 @@
-# Start from the base image
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS base
+# Newer CUDA/PyTorch from the official PyTorch images
+FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime
 
-ENV HF_HOME=/runpod-volume
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HOME=/data/huggingface \
+    HUGGINGFACE_HUB_CACHE=/data/huggingface \
+    TRANSFORMERS_CACHE=/data/huggingface \
+    HF_HUB_ENABLE_HF_TRANSFER=1
 
-# Install Python and other necessary packages
-RUN apt-get update && apt-get install -y \
-    python3.11 \
-    python3-pip \
-    git \
-    wget \
-    libgl1 \
-    && ln -sf /usr/bin/python3.11 /usr/bin/python \
-    && ln -sf /usr/bin/pip3 /usr/bin/pip
+WORKDIR /app
 
-# Install all dependencies in a single, consolidated command
-RUN pip install --no-cache-dir infinity-emb[all]==0.0.76 \
-    transformers>=4.42.0 \
-    sentence-transformers \
-    einops \
-    torch==2.5.1+cu124 --index-url https://download.pytorch.org/whl/test/cu124 \
-    && pip install --no-cache-dir git+https://github.com/runpod/runpod-python.git \
-    && pip install --no-cache-dir git+https://github.com/pytorch-labs/float8_experimental.git
+RUN apt-get update && apt-get install -y --no-install-recommends git && \
+    rm -rf /var/lib/apt/lists/*
 
-# Add src files
-ADD src .
+# Qwen3-Embedding-8B needs transformers>=4.51 & sentence-transformers>=2.7
+RUN python -m pip install --upgrade pip && \
+    pip install --no-cache-dir \
+        "transformers>=4.51.0" \
+        "sentence-transformers>=2.7.0" \
+        "accelerate>=0.33.0" \
+        "runpod>=1.7.0" \
+        "numpy"
 
-# Add test input
-COPY test_input.json /test_input.json
-
-# start the handler
-CMD ["python", "-u", "/handler.py"]
+COPY handler.py /app/handler.py
+CMD ["python", "-u", "/app/handler.py"]
